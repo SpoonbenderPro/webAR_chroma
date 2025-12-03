@@ -120,6 +120,7 @@
     let sessionStarted  = false;
     let hasFoundTarget  = false;
     let videoCompleted  = false; // blocks replay until Restart
+    let scanLocked      = false; // once true, scan overlay stays hidden until Restart
 
     // Initial video state
     videoEl.pause();
@@ -127,7 +128,7 @@
     videoEl.muted = false;
     videoEl.loop = false; // play ONCE
 
-    // MindAR setup
+    // MindAR setup (disable built-in scanning UI)
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
@@ -136,7 +137,10 @@
       missTolerance: 8,
       filterMinCF: 0.0001,
       filterBeta: 0.01,
-      smoothFactor: 0.8
+      smoothFactor: 0.8,
+      uiLoading: 'no',
+      uiScanning: 'no',
+      uiError: 'no'
     });
 
     const { renderer, scene, camera } = mindar;
@@ -221,6 +225,7 @@
 
       // Hide scan overlay once the user succeeded
       scanOverlay.style.display = 'none';
+      scanLocked = true; // from now on, don't show overlay again until Restart
 
       if (!sessionStarted || videoCompleted) {
         return;
@@ -297,8 +302,12 @@
         videoCompleted = false;
         hint.textContent = 'Point your camera at the target image';
 
-        // Show guidance overlay now that camera feed is visible
-        scanOverlay.style.display = 'flex';
+        // Show guidance overlay only if we haven't already scanned once
+        if (!scanLocked) {
+          scanOverlay.style.display = 'flex';
+        } else {
+          scanOverlay.style.display = 'none';
+        }
 
         renderer.setAnimationLoop(() => {
           if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
@@ -353,6 +362,7 @@
       // Reset state
       videoCompleted = false;
       hasFoundTarget = false;
+      scanLocked = false; // allow scan overlay again after restart
 
       // Hide planes
       plane.visible = false;
