@@ -29,7 +29,7 @@
     #scanOverlay{
       position:fixed;
       inset:0;
-      display:none;               /* shown after AR starts */
+      display:flex;              /* 🔥 show from the very start */
       align-items:center;
       justify-content:center;
       z-index:5;
@@ -88,7 +88,7 @@
       </div>
       <div id="scanTextTitle">Find this image</div>
       <div id="scanTextBody">
-        Look around and point your camera at this picture to start the experience.
+        Tap "Start AR", then look around and point your camera at this picture.
       </div>
     </div>
   </div>
@@ -302,7 +302,7 @@
         videoCompleted = false;
         hint.textContent = 'Point your camera at the target image';
 
-        // Show guidance overlay only if we haven't already scanned once
+        // Keep overlay visible on first run (scanLocked is false)
         if (!scanLocked) {
           scanOverlay.style.display = 'flex';
         } else {
