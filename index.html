@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>WebAR — Chroma Video</title>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+    }
+  }
+  </script>
+
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#000;color:#fff;overflow:hidden;font-family:sans-serif}
+    #container{position:fixed;inset:0}
+    #hint{position:fixed;left:0;right:0;top:10px;text-align:center;color:#fff;opacity:.9;z-index:3}
+    #ui{position:fixed;left:12px;right:12px;bottom:12px;z-index:4;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+    button,a.button{padding:10px 14px;border:0;border-radius:12px;font-size:14px;cursor:pointer;background:#4f46e5;color:#fff;text-decoration:none}
+    button.secondary{background:#374151}
+    #hiddenVideo{display:none}
+
+    /* Scan overlay */
+    #scanOverlay{
+      position:fixed;
+      inset:0;
+      display:none;               /* shown after AR starts */
+      align-items:center;
+      justify-content:center;
+      z-index:5;
+      pointer-events:none;        /* camera taps still pass through if needed */
+    }
+    #scanCard{
+      background:rgba(0,0,0,0.65);
+      border-radius:16px;
+      padding:12px 14px;
+      max-width:260px;
+      text-align:center;
+      border:1px solid rgba(255,255,255,0.15);
+      box-shadow:0 12px 30px rgba(0,0,0,0.6);
+    }
+    #scanPreviewWrapper{
+      border-radius:12px;
+      padding:6px;
+      margin-bottom:8px;
+      border:2px solid rgba(255,255,255,0.7);
+      animation:scanPulse 1.4s ease-in-out infinite;
+    }
+    #scanPreview{
+      display:block;
+      width:100%;
+      max-height:140px;
+      object-fit:contain;
+      opacity:0.75;              /* translucent target image */
+      border-radius:8px;
+    }
+    #scanTextTitle{
+      font-size:14px;
+      font-weight:600;
+      margin-bottom:4px;
+    }
+    #scanTextBody{
+      font-size:12px;
+      opacity:0.85;
+    }
+    @keyframes scanPulse{
+      0%  { transform:scale(1);   opacity:0.9; }
+      50% { transform:scale(1.03);opacity:1.0; }
+      100%{ transform:scale(1);   opacity:0.9; }
+    }
+  </style>
+</head>
+<body>
+  <div id="hint">Tap "Start AR" and point your camera at the target image</div>
+  <div id="container"></div>
+
+  <!-- Scan guidance overlay -->
+  <div id="scanOverlay">
+    <div id="scanCard">
+      <div id="scanPreviewWrapper">
+        <!-- Replace src with your actual marker preview image -->
+        <img id="scanPreview" src="./target-preview.png" alt="Scan this image">
+      </div>
+      <div id="scanTextTitle">Find this image</div>
+      <div id="scanTextBody">
+        Look around and point your camera at this picture to start the experience.
+      </div>
+    </div>
+  </div>
+
+  <!-- Your promo video -->
+  <video id="hiddenVideo" src="./promo.mp4"
+         playsinline webkit-playsinline preload="auto"></video>
+
+  <div id="ui">
+    <button id="startBtn">Start AR</button>
+    <button id="restartBtn" class="secondary">Restart</button>
+    <a id="ctaBtn" class="button" href="#" target="_blank" rel="noopener">Visit Site</a>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { MindARThree } from 'mindar-image-three';
+
+    const CTA_URL = 'http://cgculture.in/';
+    document.getElementById('ctaBtn').href = CTA_URL;
+
+    const startBtn     = document.getElementById('startBtn');
+    const restartBtn   = document.getElementById('restartBtn');
+    const videoEl      = document.getElementById('hiddenVideo');
+    const hint         = document.getElementById('hint');
+    const container    = document.getElementById('container');
+    const scanOverlay  = document.getElementById('scanOverlay');
+
+    let sessionStarted  = false;
+    let hasFoundTarget  = false;
+    let videoCompleted  = false; // blocks replay until Restart
+
+    // Initial video state
+    videoEl.pause();
+    videoEl.currentTime = 0;
+    videoEl.muted = false;
+    videoEl.loop = false; // play ONCE
+
+    // MindAR setup
+    const mindar = new MindARThree({
+      container,
+      imageTargetSrc: './targets.mind',
+      maxTrack: 1,
+      warmupTolerance: 5,
+      missTolerance: 8,
+      filterMinCF: 0.0001,
+      filterBeta: 0.01,
+      smoothFactor: 0.8
+    });
+
+    const { renderer, scene, camera } = mindar;
+    renderer.setClearColor(0x000000, 0);
+    scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+    // Shared video texture + chroma key material
+    const videoTexture = new THREE.VideoTexture(videoEl);
+    videoTexture.encoding = THREE.sRGBEncoding;
+
+    const chromaKeyMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        map:        { value: videoTexture },
+        keyColor:   { value: new THREE.Color(0x00ff00) },
+        similarity: { value: 0.45 },
+        smoothness: { value: 0.10 }
+      },
+      transparent: true,
+      side: THREE.DoubleSide,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform vec3 keyColor;
+        uniform float similarity;
+        uniform float smoothness;
+        varying vec2 vUv;
+
+        void main() {
+          vec4 color = texture2D(map, vUv);
+
+          float Y1 = 0.2989 * color.r + 0.5866 * color.g + 0.1145 * color.b;
+          float Cr1 = color.r - Y1;
+          float Cb1 = color.b - Y1;
+
+          float Y2 = 0.2989 * keyColor.r + 0.5866 * keyColor.g + 0.1145 * keyColor.b;
+          float Cr2 = keyColor.r - Y2;
+          float Cb2 = keyColor.b - Y2;
+
+          float d = distance(vec2(Cr1, Cb1), vec2(Cr2, Cb2));
+          float blend = smoothstep(similarity, similarity + smoothness, d);
+
+          gl_FragColor = vec4(color.rgb, color.a * blend);
+        }
+      `
+    });
+
+    // Marker plane
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(16/9, 1),
+      chromaKeyMaterial
+    );
+    plane.scale.set(1.0 / (16/9), 0.56, 1);
+    plane.visible = false;
+    scene.add(plane);
+
+    // HUD plane (stick to camera, same chroma)
+    const hudScene  = new THREE.Scene();
+    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
+
+    const hudPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.5, 0.9),
+      chromaKeyMaterial
+    );
+    hudPlane.position.set(0, 0, -1);
+    hudPlane.visible = false;
+    hudScene.add(hudPlane);
+
+    const anchor = mindar.addAnchor(0);
+    anchor.group.add(plane);
+
+    // === ANCHOR EVENTS ===
+
+    anchor.onTargetFound = async () => {
+      console.log('Target found');
+      hint.textContent = 'Tracking ✓';
+
+      // Hide scan overlay once the user succeeded
+      scanOverlay.style.display = 'none';
+
+      if (!sessionStarted || videoCompleted) {
+        return;
+      }
+
+      plane.visible = true;
+      hudPlane.visible = false;
+      hasFoundTarget = true;
+
+      if (videoEl.paused) {
+        try {
+          videoEl.muted = false; // we WANT audio now
+          await videoEl.play();
+        } catch (err) {
+          console.warn('Play with sound failed, trying muted', err);
+          try {
+            videoEl.muted = true;
+            await videoEl.play();
+          } catch (err2) {
+            console.error('Video playback failed even muted', err2);
+          }
+        }
+      }
+    };
+
+    anchor.onTargetLost = () => {
+      console.log('Target lost');
+      if (!sessionStarted || videoCompleted) return;
+
+      hint.textContent = 'Lost target → HUD mode';
+      plane.visible = false;
+      hudPlane.visible = true;
+      // Video keeps playing, just switches to HUD.
+    };
+
+    // === VIDEO END ===
+
+    videoEl.addEventListener('ended', () => {
+      console.log('Video ended');
+
+      plane.visible = false;
+      hudPlane.visible = false;
+
+      videoCompleted = true;
+      hasFoundTarget = false;
+
+      hint.textContent = 'Experience finished — tap Restart to view again';
+      // AR session continues; camera stays on.
+    });
+
+    // === START AR SESSION ===
+
+    async function startARSession() {
+      console.log('startARSession()');
+
+      // Muted pre-play ONLY to unlock audio permission, then pause & rewind.
+      try {
+        videoEl.muted = true;
+        await videoEl.play();
+        await videoEl.pause();
+        videoEl.currentTime = 0;
+        videoEl.muted = false;
+        console.log('Muted pre-play OK, audio unlocked');
+      } catch (e) {
+        console.warn('Pre-play failed, audio may be restricted', e);
+        videoEl.pause();
+        videoEl.currentTime = 0;
+        videoEl.muted = false;
+      }
+
+      try {
+        await mindar.start();
+        sessionStarted = true;
+        videoCompleted = false;
+        hint.textContent = 'Point your camera at the target image';
+
+        // Show guidance overlay now that camera feed is visible
+        scanOverlay.style.display = 'flex';
+
+        renderer.setAnimationLoop(() => {
+          if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+            videoTexture.needsUpdate = true;
+          }
+          renderer.render(scene, camera);
+
+          if (hudPlane.visible) {
+            renderer.clearDepth();
+            renderer.render(hudScene, hudCamera);
+          }
+        });
+
+        startBtn.textContent = 'Running…';
+      } catch (e) {
+        console.error('Failed to start MindAR', e);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start AR (Retry)';
+        hint.textContent = 'Failed to start AR. Tap "Start AR" to retry.';
+      }
+    }
+
+    // Start AR button
+    startBtn.addEventListener('click', async () => {
+      console.log('Start AR clicked');
+
+      startBtn.disabled = true;
+      startBtn.textContent = 'Starting…';
+      hint.textContent = 'Starting AR, please wait…';
+
+      // Reset video fresh
+      videoEl.pause();
+      videoEl.currentTime = 0;
+      videoEl.muted = false;
+      videoEl.loop = false;
+      videoCompleted = false;
+
+      await startARSession();
+    });
+
+    // === RESTART (instant, no AR stop) ===
+
+    restartBtn.addEventListener('click', () => {
+      console.log('Restart clicked');
+
+      // Reset video
+      videoEl.pause();
+      videoEl.currentTime = 0;
+      videoEl.muted = false;
+      videoEl.loop = false;
+
+      // Reset state
+      videoCompleted = false;
+      hasFoundTarget = false;
+
+      // Hide planes
+      plane.visible = false;
+      hudPlane.visible = false;
+
+      // Show overlay again to guide user for next scan
+      if (sessionStarted) {
+        scanOverlay.style.display = 'flex';
+      }
+
+      hint.textContent = 'Point your camera at the target image';
+      console.log('Restart complete — scan target again to play from start');
+    });
+
+    // Resize handling
+    const ro = new ResizeObserver(() => {
+      renderer.setSize(container.clientWidth, container.clientHeight, false);
+    });
+    ro.observe(container);
+  </script>
+</body>
+</html>
