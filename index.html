@@ -29,11 +29,11 @@
     #scanOverlay{
       position:fixed;
       inset:0;
-      display:flex;               /* 🔥 visible from the start */
+      display:none;              /* 🔹 hidden before Start AR */
       align-items:center;
       justify-content:center;
       z-index:5;
-      pointer-events:none;        /* camera taps still pass through if needed */
+      pointer-events:none;       /* camera taps still pass through */
     }
     #scanCard{
       background:rgba(0,0,0,0.65);
@@ -88,7 +88,7 @@
       </div>
       <div id="scanTextTitle">Find this image</div>
       <div id="scanTextBody">
-        Tap "Start AR" and then point your camera at this picture.
+        Tap "Start AR", then point your camera at this picture.
       </div>
     </div>
   </div>
@@ -117,10 +117,11 @@
     const container    = document.getElementById('container');
     const scanOverlay  = document.getElementById('scanOverlay');
 
-    let sessionStarted  = false;
-    let hasFoundTarget  = false;
-    let videoCompleted  = false; // blocks replay until Restart
-    let scanLocked      = false; // once true, overlay stays hidden until Restart
+    let sessionStarted   = false;
+    let hasFoundTarget   = false;
+    let videoCompleted   = false; // blocks replay until Restart
+    let scanLocked       = false; // once true, overlay + cube stay hidden until Restart
+    let mindarScanningEl = null;  // MindAR built-in scan UI (cube + line)
 
     // Initial video state
     videoEl.pause();
@@ -128,7 +129,7 @@
     videoEl.muted = false;
     videoEl.loop = false; // play ONCE
 
-    // MindAR setup (we ignore its built-in scan UI; we use our own overlay instead)
+    // MindAR setup (default UI ON → cube scan animation works & is centered)
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
@@ -137,10 +138,8 @@
       missTolerance: 8,
       filterMinCF: 0.0001,
       filterBeta: 0.01,
-      smoothFactor: 0.8,
-      uiLoading: 'no',
-      uiScanning: 'no',
-      uiError: 'no'
+      smoothFactor: 0.8
+      // uiScanning/uiLoading/uiError left as default (enabled)
     });
 
     const { renderer, scene, camera } = mindar;
@@ -225,7 +224,12 @@
 
       // Hide our overlay once the user succeeded
       scanOverlay.style.display = 'none';
-      scanLocked = true; // from now on, don't show overlay again until Restart
+      scanLocked = true; // from now on, don't show overlay/cube again until Restart
+
+      // Hide MindAR's scan cube too
+      if (mindarScanningEl) {
+        mindarScanningEl.style.display = 'none';
+      }
 
       if (!sessionStarted || videoCompleted) {
         return;
@@ -259,7 +263,7 @@
       plane.visible = false;
       hudPlane.visible = true;
       // Video keeps playing, just switches to HUD.
-      // IMPORTANT: overlay stays hidden because scanLocked = true.
+      // IMPORTANT: overlay & scan cube stay hidden because scanLocked = true.
     };
 
     // === VIDEO END ===
@@ -274,7 +278,6 @@
       hasFoundTarget = false;
 
       hint.textContent = 'Experience finished — tap Restart to view again';
-      // AR session continues; camera stays on.
     });
 
     // === START AR SESSION ===
@@ -303,11 +306,20 @@
         videoCompleted = false;
         hint.textContent = 'Point your camera at the target image';
 
-        // Keep overlay visible on first run (scanLocked is false)
+        // After MindAR starts, its UI DOM is created – grab the scanning element
+        mindarScanningEl = document.querySelector('.mindar-ui-scanning');
+
+        // Show our overlay + cube only if we haven't scanned yet
         if (!scanLocked) {
           scanOverlay.style.display = 'flex';
+          if (mindarScanningEl) {
+            mindarScanningEl.style.display = 'block';
+          }
         } else {
           scanOverlay.style.display = 'none';
+          if (mindarScanningEl) {
+            mindarScanningEl.style.display = 'none';
+          }
         }
 
         renderer.setAnimationLoop(() => {
@@ -319,6 +331,11 @@
           if (hudPlane.visible) {
             renderer.clearDepth();
             renderer.render(hudScene, hudCamera);
+          }
+
+          // Safety: if scanLocked, enforce cube hidden
+          if (scanLocked && mindarScanningEl && mindarScanningEl.style.display !== 'none') {
+            mindarScanningEl.style.display = 'none';
           }
         });
 
@@ -349,7 +366,7 @@
       await startARSession();
     });
 
-    // === RESTART (instant, no AR stop) ===
+    // === RESTART (soft reset, keep AR running) ===
 
     restartBtn.addEventListener('click', () => {
       console.log('Restart clicked');
@@ -363,15 +380,18 @@
       // Reset state
       videoCompleted = false;
       hasFoundTarget = false;
-      scanLocked = false; // allow overlay again after restart
+      scanLocked = false; // allow overlay + cube again after restart
 
       // Hide planes
       plane.visible = false;
       hudPlane.visible = false;
 
-      // Show overlay again to guide user for next scan
+      // Show overlay & scan cube again to guide user for next scan
       if (sessionStarted) {
         scanOverlay.style.display = 'flex';
+        if (mindarScanningEl) {
+          mindarScanningEl.style.display = 'block';
+        }
       }
 
       hint.textContent = 'Point your camera at the target image';
