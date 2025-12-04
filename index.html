@@ -18,10 +18,44 @@
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#000;color:#fff;overflow:hidden;font-family:sans-serif}
+
     #container{position:fixed;inset:0}
-    #hint{position:fixed;left:0;right:0;top:10px;text-align:center;color:#fff;opacity:.9;z-index:3}
-    #ui{position:fixed;left:12px;right:12px;bottom:12px;z-index:4;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
-    button,a.button{padding:10px 14px;border:0;border-radius:12px;font-size:14px;cursor:pointer;background:#4f46e5;color:#fff;text-decoration:none}
+
+    /* 🔧 Hint text – black & bold */
+    #hint{
+      position:fixed;
+      left:0;
+      right:0;
+      top:10px;
+      text-align:center;
+      color:#000;
+      font-weight:700;
+      opacity:.95;
+      z-index:3;
+      text-shadow:0 0 4px rgba(255,255,255,0.7);
+    }
+
+    #ui{
+      position:fixed;
+      left:12px;
+      right:12px;
+      bottom:12px;
+      z-index:4;
+      display:flex;
+      gap:8px;
+      justify-content:center;
+      flex-wrap:wrap;
+    }
+    button,a.button{
+      padding:10px 14px;
+      border:0;
+      border-radius:12px;
+      font-size:14px;
+      cursor:pointer;
+      background:#4f46e5;
+      color:#fff;
+      text-decoration:none;
+    }
     button.secondary{background:#374151}
     #hiddenVideo{display:none}
 
@@ -44,20 +78,20 @@
       justify-content:center;
     }
 
-    /* 🔧 Taller & wider scan frame so it fits around the preview */
+    /* 🔧 Taller & slightly wider scan frame so it fully covers preview */
     #scanFrame{
       position:absolute;
-      top:-24px;
-      width:135%;
-      max-width:460px;
-      aspect-ratio:16 / 8;       /* taller than 16/9 */
+      top:-32px;
+      width:150%;
+      max-width:500px;
+      aspect-ratio:16 / 11;      /* taller than before */
       pointer-events:none;
     }
 
     .scan-corner{
       position:absolute;
       width:18%;
-      height:28%;                /* taller corner segments */
+      height:35%;                /* increased corner height */
       border:3px solid rgba(255,255,255,0.95);
     }
     .scan-corner.tl{top:0;left:0;border-right:none;border-bottom:none;}
@@ -65,12 +99,12 @@
     .scan-corner.bl{bottom:0;left:0;border-right:none;border-top:none;}
     .scan-corner.br{bottom:0;right:0;border-left:none;border-top:none;}
 
-    /* 🔧 Thicker, brighter scan line */
+    /* Thicker, brighter scan line */
     #scanLine{
       position:absolute;
       left:6%;
       right:6%;
-      height:4px;                /* was 2px */
+      height:4px;
       background:rgba(255,255,255,1);
       animation:scanLine 1.4s ease-in-out infinite;
       box-shadow:0 0 12px rgba(255,255,255,0.9);
@@ -78,9 +112,9 @@
     }
 
     @keyframes scanLine{
-      0%   { top:12%; opacity:0.4; }
-      50%  { top:88%; opacity:1.0; }
-      100% { top:12%; opacity:0.4; }
+      0%   { top:10%; opacity:0.4; }
+      50%  { top:90%; opacity:1.0; }
+      100% { top:10%; opacity:0.4; }
     }
 
     /* Preview card */
@@ -105,7 +139,7 @@
       width:100%;
       max-height:140px;
       object-fit:contain;
-      opacity:0.75;              /* translucent target image */
+      opacity:0.75;
       border-radius:8px;
     }
     #scanTextTitle{
@@ -125,7 +159,7 @@
   </style>
 </head>
 <body>
-  <div id="hint">Tap "Start AR" and point your camera at the target image</div>
+  <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
   <!-- Scan guidance overlay with preview + custom scan frame -->
@@ -178,16 +212,16 @@
 
     let sessionStarted  = false;
     let hasFoundTarget  = false;
-    let videoCompleted  = false; // blocks replay until Restart
-    let scanLocked      = false; // once true, overlay stays hidden until Restart
+    let videoCompleted  = false;
+    let scanLocked      = false;
 
     // Initial video state
     videoEl.pause();
     videoEl.currentTime = 0;
     videoEl.muted = false;
-    videoEl.loop = false; // play ONCE
+    videoEl.loop = false;
 
-    // MindAR setup – disable its built-in UI, we use our own overlay
+    // MindAR setup – no built-in UI, we use our own overlay
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
@@ -261,7 +295,7 @@
     plane.visible = false;
     scene.add(plane);
 
-    // HUD plane (stick to camera, same chroma)
+    // HUD plane
     const hudScene  = new THREE.Scene();
     const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
 
@@ -276,15 +310,12 @@
     const anchor = mindar.addAnchor(0);
     anchor.group.add(plane);
 
-    // === ANCHOR EVENTS ===
-
     anchor.onTargetFound = async () => {
       console.log('Target found');
       hint.textContent = 'Tracking ✓';
 
-      // Hide overlay + scan animation once the user succeeded
       scanOverlay.style.display = 'none';
-      scanLocked = true; // from now on, don't show overlay again until Restart
+      scanLocked = true;
 
       if (!sessionStarted || videoCompleted) return;
 
@@ -294,7 +325,7 @@
 
       if (videoEl.paused) {
         try {
-          videoEl.muted = false; // we WANT audio now
+          videoEl.muted = false;
           await videoEl.play();
         } catch (err) {
           console.warn('Play with sound failed, trying muted', err);
@@ -315,29 +346,20 @@
       hint.textContent = 'Lost target → HUD mode';
       plane.visible = false;
       hudPlane.visible = true;
-      // Video keeps playing, just switches to HUD.
     };
-
-    // === VIDEO END ===
 
     videoEl.addEventListener('ended', () => {
       console.log('Video ended');
-
       plane.visible = false;
       hudPlane.visible = false;
-
       videoCompleted = true;
       hasFoundTarget = false;
-
       hint.textContent = 'Experience finished — tap Restart to view again';
     });
-
-    // === START AR SESSION ===
 
     async function startARSession() {
       console.log('startARSession()');
 
-      // Muted pre-play ONLY to unlock audio permission, then pause & rewind.
       try {
         videoEl.muted = true;
         await videoEl.play();
@@ -358,7 +380,6 @@
         videoCompleted = false;
         hint.textContent = 'Point your camera at the target image';
 
-        // Show overlay + animation only if we haven't scanned yet
         if (!scanLocked) {
           scanOverlay.style.display = 'flex';
         } else {
@@ -386,7 +407,6 @@
       }
     }
 
-    // Start AR button
     startBtn.addEventListener('click', async () => {
       console.log('Start AR clicked');
 
@@ -394,7 +414,6 @@
       startBtn.textContent = 'Starting…';
       hint.textContent = 'Starting AR, please wait…';
 
-      // Reset video fresh
       videoEl.pause();
       videoEl.currentTime = 0;
       videoEl.muted = false;
@@ -404,27 +423,21 @@
       await startARSession();
     });
 
-    // === RESTART (soft reset, keep AR running) ===
-
     restartBtn.addEventListener('click', () => {
       console.log('Restart clicked');
 
-      // Reset video
       videoEl.pause();
       videoEl.currentTime = 0;
       videoEl.muted = false;
       videoEl.loop = false;
 
-      // Reset state
       videoCompleted = false;
       hasFoundTarget = false;
-      scanLocked = false; // allow overlay again after restart
+      scanLocked = false;
 
-      // Hide planes
       plane.visible = false;
       hudPlane.visible = false;
 
-      // Show overlay & scan animation again to guide user for next scan
       if (sessionStarted) {
         scanOverlay.style.display = 'flex';
       }
@@ -433,7 +446,6 @@
       console.log('Restart complete — scan target again to play from start');
     });
 
-    // Resize handling
     const ro = new ResizeObserver(() => {
       renderer.setSize(container.clientWidth, container.clientHeight, false);
     });
