@@ -44,41 +44,43 @@
       justify-content:center;
     }
 
-    /* Scan frame (corners + moving line) */
+    /* 🔧 Taller & wider scan frame so it fits around the preview */
     #scanFrame{
       position:absolute;
-      top:-16px;
-      width:120%;
-      max-width:400px;
-      aspect-ratio:16 / 9;
+      top:-24px;
+      width:135%;
+      max-width:460px;
+      aspect-ratio:16 / 8;       /* taller than 16/9 */
       pointer-events:none;
     }
 
     .scan-corner{
       position:absolute;
       width:18%;
-      height:20%;
-      border:3px solid rgba(255,255,255,0.9);
+      height:28%;                /* taller corner segments */
+      border:3px solid rgba(255,255,255,0.95);
     }
     .scan-corner.tl{top:0;left:0;border-right:none;border-bottom:none;}
     .scan-corner.tr{top:0;right:0;border-left:none;border-bottom:none;}
     .scan-corner.bl{bottom:0;left:0;border-right:none;border-top:none;}
     .scan-corner.br{bottom:0;right:0;border-left:none;border-top:none;}
 
+    /* 🔧 Thicker, brighter scan line */
     #scanLine{
       position:absolute;
-      left:10%;
-      right:10%;
-      height:2px;
-      background:rgba(255,255,255,0.9);
+      left:6%;
+      right:6%;
+      height:4px;                /* was 2px */
+      background:rgba(255,255,255,1);
       animation:scanLine 1.4s ease-in-out infinite;
-      box-shadow:0 0 10px rgba(255,255,255,0.7);
+      box-shadow:0 0 12px rgba(255,255,255,0.9);
+      border-radius:999px;
     }
 
     @keyframes scanLine{
-      0%   { top:15%; opacity:0.3; }
-      50%  { top:80%; opacity:1.0; }
-      100% { top:15%; opacity:0.3; }
+      0%   { top:12%; opacity:0.4; }
+      50%  { top:88%; opacity:1.0; }
+      100% { top:12%; opacity:0.4; }
     }
 
     /* Preview card */
